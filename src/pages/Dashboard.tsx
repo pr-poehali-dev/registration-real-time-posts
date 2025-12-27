@@ -15,13 +15,13 @@ import {
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { api } from '@/lib/api';
 
 interface User {
-  id: string;
+  id: number;
   phone: string;
   fullName: string;
   position: string;
-  password: string;
   registeredAt: string;
   bio?: string;
   email?: string;
@@ -29,8 +29,8 @@ interface User {
 }
 
 interface Post {
-  id: string;
-  userId: string;
+  id: number;
+  userId: number;
   userName: string;
   userPosition: string;
   content: string;
@@ -39,30 +39,19 @@ interface Post {
 }
 
 interface Message {
-  id: string;
-  fromUserId: string;
+  id: number;
+  fromUserId: number;
   fromUserName: string;
   content: string;
   timestamp: string;
 }
 
 interface Group {
-  id: string;
+  id: number;
   name: string;
   description: string;
-  createdBy: string;
-  members: string[];
-  posts: Post[];
-}
-
-interface Notification {
-  id: string;
-  type: 'friend_request' | 'message' | 'group_invite';
-  fromUserId: string;
-  fromUserName: string;
-  content: string;
-  timestamp: string;
-  isRead: boolean;
+  createdBy: number;
+  memberCount: number;
 }
 
 export default function Dashboard() {
@@ -75,8 +64,7 @@ export default function Dashboard() {
   const [newMessage, setNewMessage] = useState('');
   const [groups, setGroups] = useState<Group[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [friends, setFriends] = useState<string[]>([]);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [editProfile, setEditProfile] = useState({
     fullName: '',
     email: '',
@@ -100,99 +88,122 @@ export default function Dashboard() {
       position: user.position
     });
 
-    const savedPosts = JSON.parse(localStorage.getItem('posts') || '[]');
-    setPosts(savedPosts);
-
-    const savedMessages = JSON.parse(localStorage.getItem('messages') || '[]');
-    setMessages(savedMessages);
-
-    const savedGroups = JSON.parse(localStorage.getItem('groups') || '[]');
-    setGroups(savedGroups);
-
-    const savedNotifications = JSON.parse(localStorage.getItem('notifications') || '[]');
-    setNotifications(savedNotifications);
-
-    const savedFriends = JSON.parse(localStorage.getItem(`friends_${user.id}`) || '[]');
-    setFriends(savedFriends);
+    loadPosts();
+    loadMessages(user.id);
+    loadGroups(user.id);
   }, [navigate]);
 
-  const handleCreatePost = () => {
+  const loadPosts = async () => {
+    try {
+      const response = await api.posts.getAll();
+      if (response.posts) {
+        setPosts(response.posts);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки постов:', error);
+    }
+  };
+
+  const loadMessages = async (userId: number) => {
+    try {
+      const response = await api.messages.getAll(userId);
+      if (response.messages) {
+        setMessages(response.messages);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки сообщений:', error);
+    }
+  };
+
+  const loadGroups = async (userId: number) => {
+    try {
+      const response = await api.groups.getAll(userId);
+      if (response.groups) {
+        setGroups(response.groups);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки групп:', error);
+    }
+  };
+
+  const handleCreatePost = async () => {
     if (!newPost.trim() || !currentUser) return;
 
-    const post: Post = {
-      id: Date.now().toString(),
-      userId: currentUser.id,
-      userName: currentUser.fullName,
-      userPosition: currentUser.position,
-      content: newPost,
-      timestamp: new Date().toISOString(),
-      isModerated: true
-    };
+    try {
+      const response = await api.posts.create({
+        userId: currentUser.id,
+        content: newPost
+      });
 
-    const updatedPosts = [post, ...posts];
-    setPosts(updatedPosts);
-    localStorage.setItem('posts', JSON.stringify(updatedPosts));
-    setNewPost('');
-    toast.success('Пост опубликован!');
+      if (response.post) {
+        setPosts([response.post, ...posts]);
+        setNewPost('');
+        toast.success('Пост опубликован!');
+      }
+    } catch (error) {
+      toast.error('Ошибка публикации поста');
+    }
   };
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!newMessage.trim() || !currentUser) return;
 
-    const message: Message = {
-      id: Date.now().toString(),
-      fromUserId: currentUser.id,
-      fromUserName: currentUser.fullName,
-      content: newMessage,
-      timestamp: new Date().toISOString()
-    };
+    try {
+      const response = await api.messages.send({
+        fromUserId: currentUser.id,
+        content: newMessage
+      });
 
-    const updatedMessages = [...messages, message];
-    setMessages(updatedMessages);
-    localStorage.setItem('messages', JSON.stringify(updatedMessages));
-    setNewMessage('');
-    toast.success('Сообщение отправлено!');
+      if (response.message) {
+        setMessages([...messages, response.message]);
+        setNewMessage('');
+        toast.success('Сообщение отправлено!');
+      }
+    } catch (error) {
+      toast.error('Ошибка отправки сообщения');
+    }
   };
 
-  const handleCreateGroup = () => {
+  const handleCreateGroup = async () => {
     if (!newGroupName.trim() || !currentUser) return;
 
-    const group: Group = {
-      id: Date.now().toString(),
-      name: newGroupName,
-      description: '',
-      createdBy: currentUser.id,
-      members: [currentUser.id],
-      posts: []
-    };
+    try {
+      const response = await api.groups.create({
+        userId: currentUser.id,
+        name: newGroupName,
+        description: ''
+      });
 
-    const updatedGroups = [...groups, group];
-    setGroups(updatedGroups);
-    localStorage.setItem('groups', JSON.stringify(updatedGroups));
-    setNewGroupName('');
-    toast.success('Группа создана!');
+      if (response.group) {
+        setGroups([...groups, response.group]);
+        setNewGroupName('');
+        toast.success('Группа создана!');
+      }
+    } catch (error) {
+      toast.error('Ошибка создания группы');
+    }
   };
 
-  const handleUpdateProfile = () => {
+  const handleUpdateProfile = async () => {
     if (!currentUser) return;
 
-    const updatedUser = {
-      ...currentUser,
-      ...editProfile
-    };
+    try {
+      const response = await api.auth.updateProfile({
+        userId: currentUser.id,
+        ...editProfile
+      });
 
-    setCurrentUser(updatedUser);
-    localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const updatedUsers = users.map((u: User) => u.id === currentUser.id ? updatedUser : u);
-    localStorage.setItem('users', JSON.stringify(updatedUsers));
-
-    toast.success('Профиль обновлён!');
-    setActivePanel(null);
+      if (response.user) {
+        const updatedUser = { ...currentUser, ...response.user };
+        setCurrentUser(updatedUser);
+        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+        toast.success('Профиль обновлён!');
+        setActivePanel(null);
+      }
+    } catch (error) {
+      toast.error('Ошибка обновления профиля');
+    }
   };
-
-  const unreadNotifications = notifications.filter(n => !n.isRead).length;
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -216,81 +227,87 @@ export default function Dashboard() {
   if (!currentUser) return null;
 
   return (
-    <div className="min-h-screen bg-background flex">
-      <aside className="w-72 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col">
-        <div className="p-6 border-b border-sidebar-border">
+    <div className="min-h-screen bg-background flex flex-col md:flex-row">
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="md:hidden fixed top-4 left-4 z-50 w-12 h-12 gradient-primary rounded-xl flex items-center justify-center shadow-lg"
+      >
+        <Icon name={isMobileMenuOpen ? 'X' : 'Menu'} size={24} className="text-white" />
+      </button>
+
+      <aside className={`
+        w-full md:w-72 bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col
+        fixed md:relative z-40 h-full transition-transform duration-300
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <div className="p-4 md:p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-3">
-            <Avatar className="h-12 w-12 gradient-primary">
-              <AvatarFallback className="bg-transparent text-white font-bold">
+            <Avatar className="h-10 md:h-12 w-10 md:w-12 gradient-primary flex-shrink-0">
+              <AvatarFallback className="bg-transparent text-white font-bold text-sm md:text-base">
                 {getInitials(currentUser.fullName)}
               </AvatarFallback>
             </Avatar>
-            <div>
-              <h3 className="font-semibold text-sm">{currentUser.fullName}</h3>
-              <p className="text-xs text-sidebar-foreground/70">{currentUser.position}</p>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-semibold text-sm truncate">{currentUser.fullName}</h3>
+              <p className="text-xs text-sidebar-foreground/70 truncate">{currentUser.position}</p>
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-2">
+        <nav className="flex-1 p-3 md:p-4 space-y-1 md:space-y-2 overflow-y-auto">
           <button
-            onClick={() => setActivePanel('profile')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-sidebar-accent transition-colors"
+            onClick={() => { setActivePanel('profile'); setIsMobileMenuOpen(false); }}
+            className="w-full flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg hover:bg-sidebar-accent transition-colors text-sm md:text-base"
           >
             <Icon name="User" size={20} />
             <span className="font-medium">Профиль</span>
           </button>
 
           <button
-            onClick={() => setActivePanel('chat')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-sidebar-accent transition-colors"
+            onClick={() => { setActivePanel('chat'); setIsMobileMenuOpen(false); }}
+            className="w-full flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg hover:bg-sidebar-accent transition-colors text-sm md:text-base"
           >
             <Icon name="MessageSquare" size={20} />
             <span className="font-medium">Чат</span>
             {messages.length > 0 && (
-              <Badge className="ml-auto gradient-primary text-white border-0">{messages.length}</Badge>
+              <Badge className="ml-auto gradient-primary text-white border-0 text-xs">{messages.length}</Badge>
             )}
           </button>
 
           <button
-            onClick={() => setActivePanel('groups')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-sidebar-accent transition-colors"
+            onClick={() => { setActivePanel('groups'); setIsMobileMenuOpen(false); }}
+            className="w-full flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg hover:bg-sidebar-accent transition-colors text-sm md:text-base"
           >
             <Icon name="Users" size={20} />
             <span className="font-medium">Группы</span>
-            <Badge variant="outline" className="ml-auto">{groups.length}</Badge>
+            <Badge variant="outline" className="ml-auto text-xs">{groups.length}</Badge>
           </button>
 
           <button
-            onClick={() => setActivePanel('friends')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-sidebar-accent transition-colors"
+            onClick={() => { setActivePanel('friends'); setIsMobileMenuOpen(false); }}
+            className="w-full flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg hover:bg-sidebar-accent transition-colors text-sm md:text-base"
           >
             <Icon name="UserPlus" size={20} />
             <span className="font-medium">Друзья</span>
           </button>
 
           <button
-            onClick={() => setActivePanel('notifications')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-sidebar-accent transition-colors relative"
+            onClick={() => { setActivePanel('notifications'); setIsMobileMenuOpen(false); }}
+            className="w-full flex items-center gap-3 px-3 md:px-4 py-2.5 md:py-3 rounded-lg hover:bg-sidebar-accent transition-colors relative text-sm md:text-base"
           >
             <Icon name="Bell" size={20} />
             <span className="font-medium">Уведомления</span>
-            {unreadNotifications > 0 && (
-              <Badge className="ml-auto gradient-primary text-white border-0">
-                {unreadNotifications}
-              </Badge>
-            )}
           </button>
         </nav>
 
-        <div className="p-4 border-t border-sidebar-border">
+        <div className="p-3 md:p-4 border-t border-sidebar-border">
           <Button
             onClick={() => {
               localStorage.removeItem('currentUser');
               navigate('/');
             }}
             variant="outline"
-            className="w-full"
+            className="w-full text-sm md:text-base"
           >
             <Icon name="LogOut" size={18} className="mr-2" />
             Выйти
@@ -298,20 +315,20 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto pt-16 md:pt-0">
         <header className="bg-white border-b sticky top-0 z-10 backdrop-blur-lg bg-white/80">
-          <div className="max-w-4xl mx-auto px-6 py-4">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+          <div className="max-w-4xl mx-auto px-4 md:px-6 py-3 md:py-4">
+            <h1 className="text-xl md:text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
               Лента новостей
             </h1>
           </div>
         </header>
 
-        <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
-          <Card className="p-6 gradient-card border-2 border-purple-100">
-            <div className="flex gap-4">
-              <Avatar className="h-12 w-12 gradient-primary flex-shrink-0">
-                <AvatarFallback className="bg-transparent text-white font-bold">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-6 space-y-4 md:space-y-6">
+          <Card className="p-4 md:p-6 gradient-card border-2 border-purple-100">
+            <div className="flex gap-3 md:gap-4">
+              <Avatar className="h-10 md:h-12 w-10 md:w-12 gradient-primary flex-shrink-0">
+                <AvatarFallback className="bg-transparent text-white font-bold text-sm md:text-base">
                   {getInitials(currentUser.fullName)}
                 </AvatarFallback>
               </Avatar>
@@ -320,15 +337,15 @@ export default function Dashboard() {
                   placeholder="Что у вас нового?"
                   value={newPost}
                   onChange={(e) => setNewPost(e.target.value)}
-                  className="min-h-[100px] resize-none border-2 focus:border-primary"
+                  className="min-h-[80px] md:min-h-[100px] resize-none border-2 focus:border-primary text-sm md:text-base"
                 />
                 <div className="flex justify-end">
                   <Button
                     onClick={handleCreatePost}
-                    className="gradient-primary text-white hover-scale"
+                    className="gradient-primary text-white hover-scale text-sm md:text-base"
                     disabled={!newPost.trim()}
                   >
-                    <Icon name="Send" size={18} className="mr-2" />
+                    <Icon name="Send" size={16} className="mr-2" />
                     Опубликовать
                   </Button>
                 </div>
@@ -336,32 +353,32 @@ export default function Dashboard() {
             </div>
           </Card>
 
-          <div className="space-y-4">
+          <div className="space-y-3 md:space-y-4">
             {posts.map((post) => (
-              <Card key={post.id} className="p-6 hover:shadow-lg transition-shadow animate-fade-in">
-                <div className="flex gap-4">
-                  <Avatar className="h-12 w-12 gradient-primary flex-shrink-0">
-                    <AvatarFallback className="bg-transparent text-white font-bold">
+              <Card key={post.id} className="p-4 md:p-6 hover:shadow-lg transition-shadow animate-fade-in">
+                <div className="flex gap-3 md:gap-4">
+                  <Avatar className="h-10 md:h-12 w-10 md:w-12 gradient-primary flex-shrink-0">
+                    <AvatarFallback className="bg-transparent text-white font-bold text-sm md:text-base">
                       {getInitials(post.userName)}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h4 className="font-semibold">{post.userName}</h4>
-                        <p className="text-sm text-muted-foreground">{post.userPosition}</p>
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="font-semibold text-sm md:text-base truncate">{post.userName}</h4>
+                        <p className="text-xs md:text-sm text-muted-foreground truncate">{post.userPosition}</p>
                       </div>
-                      <span className="text-xs text-muted-foreground">{formatDate(post.timestamp)}</span>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">{formatDate(post.timestamp)}</span>
                     </div>
-                    <p className="text-foreground leading-relaxed">{post.content}</p>
-                    <div className="flex gap-4 pt-2">
-                      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
-                        <Icon name="ThumbsUp" size={16} className="mr-1" />
-                        Нравится
+                    <p className="text-sm md:text-base text-foreground leading-relaxed break-words">{post.content}</p>
+                    <div className="flex gap-2 md:gap-4 pt-2">
+                      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary text-xs md:text-sm">
+                        <Icon name="ThumbsUp" size={14} className="mr-1" />
+                        <span className="hidden sm:inline">Нравится</span>
                       </Button>
-                      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary">
-                        <Icon name="MessageCircle" size={16} className="mr-1" />
-                        Комментировать
+                      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary text-xs md:text-sm">
+                        <Icon name="MessageCircle" size={14} className="mr-1" />
+                        <span className="hidden sm:inline">Комментировать</span>
                       </Button>
                     </div>
                   </div>
@@ -370,10 +387,10 @@ export default function Dashboard() {
             ))}
 
             {posts.length === 0 && (
-              <Card className="p-12 text-center">
-                <Icon name="MessageSquare" size={48} className="mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-semibold mb-2">Пока нет постов</h3>
-                <p className="text-muted-foreground">Будьте первым, кто поделится новостью!</p>
+              <Card className="p-8 md:p-12 text-center">
+                <Icon name="MessageSquare" size={40} className="mx-auto mb-4 text-muted-foreground md:w-12 md:h-12" />
+                <h3 className="text-base md:text-lg font-semibold mb-2">Пока нет постов</h3>
+                <p className="text-sm md:text-base text-muted-foreground">Будьте первым, кто поделится новостью!</p>
               </Card>
             )}
           </div>
@@ -387,8 +404,8 @@ export default function Dashboard() {
           </SheetHeader>
           <div className="space-y-6 py-6">
             <div className="flex justify-center">
-              <Avatar className="h-24 w-24 gradient-primary">
-                <AvatarFallback className="bg-transparent text-white font-bold text-3xl">
+              <Avatar className="h-20 md:h-24 w-20 md:w-24 gradient-primary">
+                <AvatarFallback className="bg-transparent text-white font-bold text-2xl md:text-3xl">
                   {getInitials(currentUser.fullName)}
                 </AvatarFallback>
               </Avatar>
@@ -396,7 +413,7 @@ export default function Dashboard() {
 
             <div className="space-y-4">
               <div>
-                <Label htmlFor="edit-fullName">ФИО</Label>
+                <Label htmlFor="edit-fullName" className="text-sm md:text-base">ФИО</Label>
                 <Input
                   id="edit-fullName"
                   value={editProfile.fullName}
@@ -406,7 +423,7 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <Label htmlFor="edit-position">Должность</Label>
+                <Label htmlFor="edit-position" className="text-sm md:text-base">Должность</Label>
                 <Input
                   id="edit-position"
                   value={editProfile.position}
@@ -416,7 +433,7 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <Label htmlFor="edit-email">Email</Label>
+                <Label htmlFor="edit-email" className="text-sm md:text-base">Email</Label>
                 <Input
                   id="edit-email"
                   type="email"
@@ -427,7 +444,7 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <Label htmlFor="edit-birthDate">Дата рождения</Label>
+                <Label htmlFor="edit-birthDate" className="text-sm md:text-base">Дата рождения</Label>
                 <Input
                   id="edit-birthDate"
                   type="date"
@@ -438,7 +455,7 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <Label htmlFor="edit-bio">О себе</Label>
+                <Label htmlFor="edit-bio" className="text-sm md:text-base">О себе</Label>
                 <Textarea
                   id="edit-bio"
                   value={editProfile.bio}
@@ -461,21 +478,21 @@ export default function Dashboard() {
           <SheetHeader>
             <SheetTitle>Чат</SheetTitle>
           </SheetHeader>
-          <div className="flex-1 overflow-y-auto py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto py-4 space-y-3 md:space-y-4">
             {messages.map((msg) => (
               <div
                 key={msg.id}
-                className={`flex gap-3 ${msg.fromUserId === currentUser.id ? 'flex-row-reverse' : ''}`}
+                className={`flex gap-2 md:gap-3 ${msg.fromUserId === currentUser.id ? 'flex-row-reverse' : ''}`}
               >
-                <Avatar className="h-10 w-10 gradient-primary flex-shrink-0">
-                  <AvatarFallback className="bg-transparent text-white text-sm font-bold">
+                <Avatar className="h-8 md:h-10 w-8 md:w-10 gradient-primary flex-shrink-0">
+                  <AvatarFallback className="bg-transparent text-white text-xs md:text-sm font-bold">
                     {getInitials(msg.fromUserName)}
                   </AvatarFallback>
                 </Avatar>
-                <div className={`flex-1 ${msg.fromUserId === currentUser.id ? 'text-right' : ''}`}>
-                  <p className="text-sm font-medium mb-1">{msg.fromUserName}</p>
+                <div className={`flex-1 min-w-0 ${msg.fromUserId === currentUser.id ? 'text-right' : ''}`}>
+                  <p className="text-xs md:text-sm font-medium mb-1 truncate">{msg.fromUserName}</p>
                   <div
-                    className={`inline-block px-4 py-2 rounded-2xl ${
+                    className={`inline-block px-3 md:px-4 py-2 rounded-2xl text-sm md:text-base max-w-full break-words ${
                       msg.fromUserId === currentUser.id
                         ? 'gradient-primary text-white'
                         : 'bg-muted'
@@ -487,6 +504,12 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
+            {messages.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <Icon name="MessageSquare" size={40} className="mx-auto mb-2" />
+                <p className="text-sm">Нет сообщений</p>
+              </div>
+            )}
           </div>
           <div className="border-t pt-4 space-y-2">
             <Textarea
@@ -494,9 +517,10 @@ export default function Dashboard() {
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               rows={2}
+              className="text-sm md:text-base"
             />
             <Button onClick={handleSendMessage} className="w-full gradient-primary text-white" disabled={!newMessage.trim()}>
-              <Icon name="Send" size={18} className="mr-2" />
+              <Icon name="Send" size={16} className="mr-2" />
               Отправить
             </Button>
           </div>
@@ -510,15 +534,16 @@ export default function Dashboard() {
           </SheetHeader>
           <div className="py-6 space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="new-group">Создать новую группу</Label>
+              <Label htmlFor="new-group" className="text-sm md:text-base">Создать новую группу</Label>
               <div className="flex gap-2">
                 <Input
                   id="new-group"
                   placeholder="Название группы"
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
+                  className="text-sm md:text-base"
                 />
-                <Button onClick={handleCreateGroup} className="gradient-primary text-white" disabled={!newGroupName.trim()}>
+                <Button onClick={handleCreateGroup} className="gradient-primary text-white flex-shrink-0" disabled={!newGroupName.trim()}>
                   <Icon name="Plus" size={18} />
                 </Button>
               </div>
@@ -528,16 +553,22 @@ export default function Dashboard() {
               {groups.map((group) => (
                 <Card key={group.id} className="p-4 hover:shadow-md transition-shadow cursor-pointer">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 gradient-primary rounded-lg flex items-center justify-center">
-                      <Icon name="Users" size={24} className="text-white" />
+                    <div className="w-10 md:w-12 h-10 md:h-12 gradient-primary rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Icon name="Users" size={20} className="text-white" />
                     </div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold">{group.name}</h4>
-                      <p className="text-sm text-muted-foreground">{group.members.length} участников</p>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-sm md:text-base truncate">{group.name}</h4>
+                      <p className="text-xs md:text-sm text-muted-foreground">{group.memberCount} участников</p>
                     </div>
                   </div>
                 </Card>
               ))}
+              {groups.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Icon name="Users" size={40} className="mx-auto mb-2" />
+                  <p className="text-sm">Нет групп</p>
+                </div>
+              )}
             </div>
           </div>
         </SheetContent>
@@ -548,26 +579,11 @@ export default function Dashboard() {
           <SheetHeader>
             <SheetTitle>Уведомления</SheetTitle>
           </SheetHeader>
-          <div className="py-6 space-y-3">
-            {notifications.length === 0 ? (
-              <div className="text-center py-12">
-                <Icon name="Bell" size={48} className="mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">Нет новых уведомлений</p>
-              </div>
-            ) : (
-              notifications.map((notif) => (
-                <Card key={notif.id} className={`p-4 ${notif.isRead ? 'opacity-60' : ''}`}>
-                  <div className="flex items-start gap-3">
-                    <Icon name="Bell" size={20} className="text-primary mt-1" />
-                    <div className="flex-1">
-                      <p className="font-medium">{notif.fromUserName}</p>
-                      <p className="text-sm text-muted-foreground">{notif.content}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{formatDate(notif.timestamp)}</p>
-                    </div>
-                  </div>
-                </Card>
-              ))
-            )}
+          <div className="py-6">
+            <div className="text-center py-12">
+              <Icon name="Bell" size={40} className="mx-auto mb-4 text-muted-foreground" />
+              <p className="text-sm md:text-base text-muted-foreground">Нет новых уведомлений</p>
+            </div>
           </div>
         </SheetContent>
       </Sheet>
@@ -578,20 +594,10 @@ export default function Dashboard() {
             <SheetTitle>Друзья</SheetTitle>
           </SheetHeader>
           <div className="py-6">
-            {friends.length === 0 ? (
-              <div className="text-center py-12">
-                <Icon name="UserPlus" size={48} className="mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">У вас пока нет друзей</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {friends.map((friendId) => (
-                  <Card key={friendId} className="p-4">
-                    <p>Друг #{friendId}</p>
-                  </Card>
-                ))}
-              </div>
-            )}
+            <div className="text-center py-12">
+              <Icon name="UserPlus" size={40} className="mx-auto mb-4 text-muted-foreground" />
+              <p className="text-sm md:text-base text-muted-foreground">У вас пока нет друзей</p>
+            </div>
           </div>
         </SheetContent>
       </Sheet>

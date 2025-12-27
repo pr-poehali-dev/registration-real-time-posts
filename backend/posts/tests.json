@@ -1,0 +1,14 @@
+{
+  "tests": [
+    {
+      "name": "Test get posts",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {
+        "posts": "array"
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}

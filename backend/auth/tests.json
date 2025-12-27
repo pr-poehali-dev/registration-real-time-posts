@@ -1,0 +1,45 @@
+{
+  "tests": [
+    {
+      "name": "Test registration",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "register",
+        "phone": "+79991234567",
+        "fullName": "Тестовый Пользователь",
+        "position": "Наставник",
+        "password": "test123"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "user": {
+          "id": "number",
+          "phone": "string",
+          "fullName": "string",
+          "position": "string"
+        }
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Test login",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "login",
+        "phone": "+79991234567",
+        "password": "test123"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "user": {
+          "id": "number",
+          "phone": "string",
+          "fullName": "string"
+        }
+      },
+      "bodyMatcher": "partial"
+    }
+  ]
+}
